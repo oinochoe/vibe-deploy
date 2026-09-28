@@ -1,0 +1,131 @@
+name: Deploy
+
+# main 에 push 되면: (1) api/ → AWS Lambda (SAM)  (2) Function URL 을 VITE_API_URL 로 주입해 프론트 빌드  (3) GitHub Pages 배포
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-northeast-2' }}
+  STACK_NAME: ${{ vars.STACK_NAME || 'vibe-deploy-api' }}
+
+jobs:
+  deploy-api:
+    name: Deploy API (SAM → Lambda)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC → AWS IAM Role (장기 Access Key 사용 안 함)
+    outputs:
+      api_url: ${{ steps.outputs.outputs.api_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+
+      - name: Install API deps
+        run: npm ci --prefix api
+
+      # routes 생성(api/_generated) + 타입체크. sam build 전에 반드시 실행되어야 한다.
+      - name: Generate routes & typecheck
+        run: npm --prefix api run typecheck
+
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: sam build
+        run: sam build
+
+      - name: sam deploy
+        env:
+          # 기본값: https://<owner>.github.io (커스텀 도메인이면 vars.CORS_ALLOW_ORIGIN 으로 덮어쓰기)
+          ALLOWED_ORIGIN: ${{ vars.CORS_ALLOW_ORIGIN || format('https://{0}.github.io', github.repository_owner) }}
+        run: |
+          sam deploy \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides "AllowedOrigin=${ALLOWED_ORIGIN,,}"
+
+      - name: Read Function URL from stack outputs
+        id: outputs
+        run: |
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text)
+          if [[ -z "$API_URL" || "$API_URL" == "None" ]]; then
+            echo "::error::ApiUrl output not found on stack $STACK_NAME"
+            exit 1
+          fi
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+          echo "### API: $API_URL" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test
+        run: curl -fsS "${{ steps.outputs.outputs.api_url }}hello"
+
+  build-web:
+    name: Build frontend (Vite)
+    needs: deploy-api
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install web deps
+        run: npm ci
+
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Write .env.production
+        run: echo "VITE_API_URL=${{ needs.deploy-api.outputs.api_url }}" > .env.production
+
+      - name: Build
+        env:
+          VITE_BASE: ${{ steps.pages.outputs.base_path }}/
+        run: npm run build
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  deploy-web:
+    name: Deploy to GitHub Pages
+    needs: build-web
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
