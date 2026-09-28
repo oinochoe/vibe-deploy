@@ -7,8 +7,12 @@ Vite(React + TS) 프론트엔드 + AWS Lambda(Function URL) 백엔드 모노레�
 
 1. **AWS OIDC Provider & IAM Role**
    - IAM → Identity providers → `token.actions.githubusercontent.com` (audience `sts.amazonaws.com`) 추가
-   - Role 신뢰 정책의 `sub` 조건: `repo:oinochoe/vibe-deploy:ref:refs/heads/main`
-   - 권한: CloudFormation / Lambda / IAM(역할 생성·PassRole) / S3(SAM 아티팩트 버킷) / Logs — PoC 라면 SAM 공식 가이드의 배포 권한을 참고
+   - Role **신뢰 정책**(신뢰 관계 탭)의 `sub` 조건 (`StringLike`):
+     `repo:oinochoe@24869229/vibe-deploy@1391652582:*`
+     - 이 저장소는 GitHub 가 `소유자@계정ID/저장소@저장소ID` 형식의 `sub` 를 보낸다.
+       `repo:oinochoe/vibe-deploy:*` 처럼 이름만 쓰면 `Not authorized to perform sts:AssumeRoleWithWebIdentity` 로 거부된다.
+   - Role **권한 정책**(권한 탭, 신뢰 정책과 별개): CloudFormation(`vibe-deploy-stack`, `aws-sam-cli-managed-default` 스택 + `Serverless-2016-10-31` transform) /
+     S3(`aws-sam-cli-managed-default-samclisourcebucket-*`) / Lambda·IAM Role·Logs(`vibe-deploy-stack-*`)
 2. **GitHub 저장소 설정**
    - Secrets: `AWS_ROLE_ARN`
    - Variables (선택): `AWS_REGION`(기본 `ap-northeast-2`), `STACK_NAME`(기본 `vibe-deploy-api`), `CORS_ALLOW_ORIGIN`(커스텀 도메인일 때)

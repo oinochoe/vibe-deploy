@@ -43,21 +43,12 @@ jobs:
       - name: Generate routes & typecheck
         run: npm --prefix api run typecheck
 
-      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/setup-sam@v3
         with:
           use-installer: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # AWS 신뢰 정책 디버깅용: 토큰 자체는 출력하지 않고 공개 클레임(iss/aud/sub)만 출력한다.
-      - name: Show OIDC token claims
-        run: |
-          TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
-          node -e 'const c = JSON.parse(Buffer.from(process.argv[1].split(".")[1], "base64url"));
-            const { iss, aud, sub, repository, ref, job_workflow_ref } = c;
-            console.log(JSON.stringify({ iss, aud, sub, repository, ref, job_workflow_ref }, null, 2));' "$TOKEN"
-
-      - uses: aws-actions/configure-aws-credentials@v5
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -111,7 +102,7 @@ jobs:
         run: npm ci
 
       - id: pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Write .env.production
         run: echo "VITE_API_URL=${{ needs.deploy-api.outputs.api_url }}" > .env.production
@@ -121,7 +112,7 @@ jobs:
           VITE_BASE: ${{ steps.pages.outputs.base_path }}/
         run: npm run build
 
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
@@ -137,4 +128,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
