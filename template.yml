@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: vibe-deploy API — api/*.ts 를 단일 Lambda(Function URL) 로 서빙
+
+Parameters:
+  AllowedOrigin:
+    Type: String
+    Default: "*"
+    Description: Function URL CORS 허용 Origin (CI 에서 GitHub Pages origin 을 주입)
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    MemorySize: 256
+    Timeout: 10
+    Environment:
+      Variables:
+        NODE_OPTIONS: --enable-source-maps
+
+Resources:
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: api/
+      Handler: _router.handler
+      LoggingConfig:
+        LogGroup: !Ref ApiLogGroup
+      FunctionUrlConfig:
+        AuthType: NONE
+        # CORS 는 Function URL 이 처리한다. 핸들러에서 Access-Control-* 헤더를 직접 넣지 말 것 (중복 헤더 → 브라우저 거부).
+        Cors:
+          AllowOrigins: [!Ref AllowedOrigin]
+          AllowMethods: ["*"]
+          AllowHeaders: [content-type]
+          MaxAge: 300
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints: [_router.ts]
+        Target: es2022
+        Minify: true
+        Sourcemap: true
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 14
+
+Outputs:
+  ApiUrl:
+    Description: Lambda Function URL (프론트엔드 VITE_API_URL)
+    Value: !GetAtt ApiFunctionUrl.FunctionUrl
+  ApiFunctionName:
+    Value: !Ref ApiFunction
