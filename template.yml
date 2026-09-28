@@ -6,7 +6,14 @@ Parameters:
   AllowedOrigin:
     Type: String
     Default: "*"
-    Description: Function URL CORS 허용 Origin (CI 에서 GitHub Pages origin 을 주입)
+    Description: Function URL CORS 허용 Origin (CI 에서 Pages origin 을 주입)
+  PermissionsBoundaryArn:
+    Type: String
+    Default: ""
+    Description: (선택) Lambda 실행 역할에 붙일 권한 경계 정책 ARN
+
+Conditions:
+  HasPermissionsBoundary: !Not [!Equals [!Ref PermissionsBoundaryArn, ""]]
 
 Globals:
   Function:
@@ -14,6 +21,7 @@ Globals:
     Architectures: [arm64]
     MemorySize: 256
     Timeout: 10
+    PermissionsBoundary: !If [HasPermissionsBoundary, !Ref PermissionsBoundaryArn, !Ref AWS::NoValue]
     Environment:
       Variables:
         NODE_OPTIONS: --enable-source-maps

@@ -17,8 +17,10 @@ api/                  백엔드 (Lambda, 자체 package.json)
 scripts/gen-api-routes.mjs   api/*.ts → api/_generated/routes.ts 생성
 template.yml          AWS SAM: 단일 Lambda + Function URL
 samconfig.toml        sam build/deploy 기본값
-.github/workflows/deploy.yml  (main push) SAM 배포 → VITE_API_URL 주입 → Vite 빌드 → Pages
-.github/workflows/ci.yml      (PR) 타입체크 + Vite 빌드 + sam validate/build — 배포 없음
+.gitlab-ci.yml               (사내 GitLab, main 커밋) SAM 배포 → VITE_API_URL 주입 → Vite 빌드 → GitLab Pages
+scripts/ci/                  파이프라인이 실행하는 배포 스크립트 (deploy-api.sh, build-web.sh)
+.github/workflows/deploy.yml  (GitHub PoC, main push) 위와 같은 흐름 → GitHub Pages
+.github/workflows/ci.yml      (GitHub PoC, PR) 타입체크 + Vite 빌드 + sam validate/build — 배포 없음
 ```
 
 ## 백엔드 규칙 (api/)
@@ -56,9 +58,16 @@ npm run typecheck # 프론트 + api 타입체크 (커밋 전 필수)
 
 ## 배포
 
-- `main` push 시 `.github/workflows/deploy.yml` 이 자동 배포한다. 수동 `sam deploy` 는 하지 않는다.
-- AWS 인증은 GitHub OIDC (`secrets.AWS_ROLE_ARN`). Access Key 를 secrets 에 넣지 않는다.
+- 기본 브랜치(main)에 커밋되면 파이프라인이 MR/PR 없이 바로 배포한다. 수동 `sam deploy` 는 하지 않는다.
+- 파이프라인 검사(타입체크 · 빌드 · 배포 확인)에 실패하면 배포되지 않고 이전 버전이 유지된다. 실패 로그를 읽고 코드를 고쳐 다시 커밋한다.
+- `.gitlab-ci.yml`, `scripts/ci/`, `template.yml`, `api/_router.ts`, `api/_lib/` 는 플랫폼 파일이다. 기능 구현 중에 수정하지 않는다.
+- AWS 인증은 OIDC(`AWS_ROLE_ARN`) 또는 러너의 IAM Role. Access Key 를 코드나 변수에 넣지 않는다.
 
 ## 작성 언어
 
 - PR 제목·본문, 커밋 메시지, PR/이슈 코멘트, 리뷰 답글은 항상 **한국어**로 작성한다. (코드 식별자, 명령어, 파일 경로는 원문 그대로)
+
+## 보안: 사내 정보 공개 금지
+
+- 이 저장소는 공개(GitHub)다. 사내 호스트명·도메인, 서버·러너 이름, 사내 프로젝트 경로, AWS 계정 ID, 내부 URL 을 파일·커밋 메시지·PR·코멘트에 적지 않는다.
+- 예시가 필요하면 `gitlab.example.com`, `pages.example.com`, `<계정ID>`, `<그룹>` 같은 자리표시자를 쓴다.
