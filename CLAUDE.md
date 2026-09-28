@@ -17,7 +17,8 @@ api/                  백엔드 (Lambda, 자체 package.json)
 scripts/gen-api-routes.mjs   api/*.ts → api/_generated/routes.ts 생성
 template.yml          AWS SAM: 단일 Lambda + Function URL
 samconfig.toml        sam build/deploy 기본값
-.github/workflows/deploy.yml  SAM 배포 → VITE_API_URL 주입 → Vite 빌드 → Pages
+.github/workflows/deploy.yml  (main push) SAM 배포 → VITE_API_URL 주입 → Vite 빌드 → Pages
+.github/workflows/ci.yml      (PR) 타입체크 + Vite 빌드 + sam validate/build — 배포 없음
 ```
 
 ## 백엔드 규칙 (api/)

@@ -1,0 +1,53 @@
+name: CI
+
+# PR 에서 배포 없이 빌드만 검증한다 (AWS 자격증명 불필요).
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            api/package-lock.json
+
+      - name: Install deps
+        run: |
+          npm ci
+          npm ci --prefix api
+
+      # 프론트 + api 타입체크 (api/_generated 라우트 생성 포함)
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build frontend
+        env:
+          VITE_API_URL: https://example.invalid/
+          VITE_BASE: /${{ github.event.repository.name }}/
+        run: npm run build
+
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: sam validate
+        run: sam validate --lint --region us-east-1
+
+      - name: sam build
+        run: sam build
