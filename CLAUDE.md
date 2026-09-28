@@ -58,3 +58,7 @@ npm run typecheck # 프론트 + api 타입체크 (커밋 전 필수)
 
 - `main` push 시 `.github/workflows/deploy.yml` 이 자동 배포한다. 수동 `sam deploy` 는 하지 않는다.
 - AWS 인증은 GitHub OIDC (`secrets.AWS_ROLE_ARN`). Access Key 를 secrets 에 넣지 않는다.
+
+## 작성 언어
+
+- PR 제목·본문, 커밋 메시지, PR/이슈 코멘트, 리뷰 답글은 항상 **한국어**로 작성한다. (코드 식별자, 명령어, 파일 경로는 원문 그대로)

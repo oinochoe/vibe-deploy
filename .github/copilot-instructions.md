@@ -10,3 +10,4 @@
 - 프론트는 `src/lib/api.ts` 의 `apiFetch()` 로만 백엔드 호출. API URL 은 `import.meta.env.VITE_API_URL` (CI 가 주입). 하드코딩 금지.
 - `.env.production` 커밋 금지. AWS 자격증명은 OIDC 만 사용.
 - 변경 후 `npm run typecheck` 가 통과해야 한다.
+- PR 제목·본문, 커밋 메시지, 코멘트는 항상 한국어로 작성한다.
