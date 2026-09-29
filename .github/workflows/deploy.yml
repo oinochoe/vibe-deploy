@@ -9,10 +9,12 @@ on:
 permissions:
   contents: read
 
+# 연속 push 시 배포를 겹쳐 실행하지 않고 순서대로 처리 (CloudFormation 스택 업데이트 충돌 방지)
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
+# vars.* 는 저장소 Settings → Variables 값. 없으면 오른쪽 기본값 사용
 env:
   NODE_VERSION: "22"
   AWS_REGION: ${{ vars.AWS_REGION || 'ap-northeast-2' }}
@@ -25,6 +27,7 @@ jobs:
     permissions:
       contents: read
       id-token: write # OIDC → AWS IAM Role (장기 Access Key 사용 안 함)
+    # 다음 job(build-web)으로 Function URL 을 넘기는 통로 (job 끼리는 파일시스템이 공유되지 않는다)
     outputs:
       api_url: ${{ steps.outputs.outputs.api_url }}
     steps:
@@ -43,23 +46,28 @@ jobs:
       - name: Generate routes & typecheck
         run: npm --prefix api run typecheck
 
+      # 러너에 SAM CLI 설치 (공식 installer 사용, token 은 GitHub API rate limit 회피용)
       - uses: aws-actions/setup-sam@v3
         with:
           use-installer: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # GitHub OIDC 토큰 → sts:AssumeRoleWithWebIdentity → 이 job 동안만 유효한 임시 자격증명
       - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # template.yml 의 esbuild 설정으로 api/_router.ts → .aws-sam/build/ 에 단일 번들 생성
       - name: sam build
         run: sam build
 
+      # capabilities / resolve_s3 등 나머지 옵션은 samconfig.toml 에서 읽는다
       - name: sam deploy
         env:
           # 기본값: https://<owner>.github.io (커스텀 도메인이면 vars.CORS_ALLOW_ORIGIN 으로 덮어쓰기)
           ALLOWED_ORIGIN: ${{ vars.CORS_ALLOW_ORIGIN || format('https://{0}.github.io', github.repository_owner) }}
+        # ${ALLOWED_ORIGIN,,} = bash 소문자 변환 (브라우저가 보내는 Origin 헤더는 소문자)
         run: |
           sam deploy \
             --stack-name "$STACK_NAME" \
@@ -68,6 +76,7 @@ jobs:
             --no-fail-on-empty-changeset \
             --parameter-overrides "AllowedOrigin=${ALLOWED_ORIGIN,,}"
 
+      # template.yml 의 Outputs.ApiUrl 을 읽어 job output 으로 내보낸다
       - name: Read Function URL from stack outputs
         id: outputs
         run: |
@@ -83,6 +92,8 @@ jobs:
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
           echo "### API: $API_URL" >> "$GITHUB_STEP_SUMMARY"
 
+      # 배포된 Lambda 가 실제로 응답하는지 확인. 실패하면 프론트 배포로 넘어가지 않는다
+      # (Function URL 은 끝에 / 가 있으므로 hello 를 바로 붙인다)
       - name: Smoke test
         run: curl -fsS "${{ steps.outputs.outputs.api_url }}hello"
 
@@ -101,9 +112,11 @@ jobs:
       - name: Install web deps
         run: npm ci
 
+      # Pages 설정 조회. base_path = "/vibe-deploy" (커스텀 도메인이면 "")
       - id: pages
         uses: actions/configure-pages@v6
 
+      # vite build 가 .env.production 을 읽어 import.meta.env.VITE_API_URL 을 번들에 문자열로 치환한다
       - name: Write .env.production
         run: echo "VITE_API_URL=${{ needs.deploy-api.outputs.api_url }}" > .env.production
 
@@ -112,6 +125,7 @@ jobs:
           VITE_BASE: ${{ steps.pages.outputs.base_path }}/
         run: npm run build
 
+      # dist/ 를 Pages 아티팩트로 업로드 → deploy-web job 이 받아서 게시
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist

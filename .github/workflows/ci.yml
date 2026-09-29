@@ -35,6 +35,7 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # 가짜 API URL 로 빌드가 되는지만 확인 (결과물은 배포하지 않는다)
       - name: Build frontend
         env:
           VITE_API_URL: https://example.invalid/
@@ -46,8 +47,10 @@ jobs:
           use-installer: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # 템플릿 문법 + cfn-lint 검사. AWS 호출이 없어 자격증명 없이 동작한다 (--region 만 필요)
       - name: sam validate
         run: sam validate --lint --region us-east-1
 
+      # esbuild 번들이 실제로 만들어지는지 확인 (deploy 는 하지 않음)
       - name: sam build
         run: sam build

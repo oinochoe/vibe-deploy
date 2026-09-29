@@ -1,4 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
+# SAM 변환: AWS::Serverless::Function 을 Lambda + IAM Role + Function URL + 권한 리소스로 풀어준다
 Transform: AWS::Serverless-2016-10-31
 Description: vibe-deploy API — api/*.ts 를 단일 Lambda(Function URL) 로 서빙
 
@@ -15,33 +16,37 @@ Parameters:
 Conditions:
   HasPermissionsBoundary: !Not [!Equals [!Ref PermissionsBoundaryArn, ""]]
 
+# 스택의 모든 함수에 공통 적용 (현재는 ApiFunction 하나)
 Globals:
   Function:
     Runtime: nodejs22.x
-    Architectures: [arm64]
+    Architectures: [arm64] # Graviton: x86 대비 저렴
     MemorySize: 256
     Timeout: 10
     PermissionsBoundary: !If [HasPermissionsBoundary, !Ref PermissionsBoundaryArn, !Ref AWS::NoValue]
     Environment:
       Variables:
-        NODE_OPTIONS: --enable-source-maps
+        NODE_OPTIONS: --enable-source-maps # minify 된 번들의 에러 스택을 원본 .ts 위치로 표시
 
 Resources:
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: api/
-      Handler: _router.handler
+      CodeUri: api/ # sam build 는 이 폴더의 package.json 기준으로 npm install(--omit=dev) 후 esbuild 실행
+      Handler: _router.handler # 번들 결과 _router.js 의 export handler
       LoggingConfig:
         LogGroup: !Ref ApiLogGroup
+      # Function URL: API Gateway 없이 Lambda 에 고정 HTTPS 주소를 붙인다.
+      # SAM 이 ApiFunctionUrl 리소스와 퍼블릭 호출 권한을 자동 생성한다.
       FunctionUrlConfig:
-        AuthType: NONE
+        AuthType: NONE # 인증 없이 누구나 호출 가능 (PoC). 보호가 필요하면 AWS_IAM 등으로 변경
         # CORS 는 Function URL 이 처리한다. 핸들러에서 Access-Control-* 헤더를 직접 넣지 말 것 (중복 헤더 → 브라우저 거부).
         Cors:
-          AllowOrigins: [!Ref AllowedOrigin]
+          AllowOrigins: [!Ref AllowedOrigin] # 배포 시 https://<owner>.github.io 로 제한됨
           AllowMethods: ["*"]
           AllowHeaders: [content-type]
-          MaxAge: 300
+          MaxAge: 300 # preflight 결과를 브라우저가 5분간 캐시
+    # sam build 방식: esbuild 로 TS → 단일 JS 번들 (node_modules 를 zip 에 넣지 않아 패키지가 작음)
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
@@ -50,14 +55,16 @@ Resources:
         Minify: true
         Sourcemap: true
 
+  # 로그 그룹을 스택이 직접 소유 → 보존 기간 지정 + 스택 삭제 시 함께 삭제 (기본은 무기한 보존)
   ApiLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       RetentionInDays: 14
 
+# 배포 후 deploy.yml 이 describe-stacks 로 ApiUrl 을 읽어 프론트 빌드에 넘긴다
 Outputs:
   ApiUrl:
     Description: Lambda Function URL (프론트엔드 VITE_API_URL)
-    Value: !GetAtt ApiFunctionUrl.FunctionUrl
+    Value: !GetAtt ApiFunctionUrl.FunctionUrl # SAM 이 만든 <함수이름>Url 리소스. 값은 끝에 / 가 붙는다
   ApiFunctionName:
     Value: !Ref ApiFunction
