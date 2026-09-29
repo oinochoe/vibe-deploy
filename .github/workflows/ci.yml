@@ -35,6 +35,10 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Azure Functions 번들(api/dist/azure.js)이 만들어지는지 확인. 배포는 하지 않는다 (Azure 로 옮길 때를 대비한 검사)
+      - name: Build Azure bundle
+        run: npm --prefix api run build:azure
+
       # 가짜 API URL 로 빌드가 되는지만 확인 (결과물은 배포하지 않는다)
       - name: Build frontend
         env:

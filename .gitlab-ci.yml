@@ -1,0 +1,63 @@
+# GitLab 배포 파이프라인
+#
+# 기본 브랜치(main)에 커밋이 들어오면 MR 없이 바로 배포한다.
+# 검사(타입체크 · 빌드 · 배포 확인)를 통과하면 반영되고, 실패하면 이전 버전이 그대로 유지된다.
+#   1) deploy-api : api/ → SAM → AWS Lambda, Function URL 을 VITE_API_URL 로 다음 단계에 전달
+#                   → AWS 에 배포할 수 있는 기존(DevOps 표준) 러너에서 실행 (DEPLOY_RUNNER_TAG)
+#   2) pages      : Vite 빌드 → GitLab Pages
+#                   → 태그 없는 Pages 러너에서 실행 (Node 와 Nexus npm 접근 필요)
+#
+# 그룹(web) CI/CD 변수
+#   DEPLOY_RUNNER_TAG         AWS 배포 러너의 태그 (필수. 틀리면 job 이 대기 상태로 멈춤)
+#   AWS_ROLE_ARN              (선택) OIDC 로 넘겨받을 IAM Role. 비우면 러너에 이미 있는 AWS 자격증명을 사용
+#   PERMISSIONS_BOUNDARY_ARN  (선택) Lambda 실행 역할에 붙일 권한 경계
+#   AWS_REGION, SAM_IMAGE, NODE_IMAGE  아래 기본값을 덮어쓸 때 (셸 실행기에서는 이미지 설정이 무시됨)
+
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "web"
+
+variables:
+  DEPLOY_RUNNER_TAG: aws-deploy
+  AWS_REGION: ap-northeast-2
+  STACK_NAME: vibe-$CI_PROJECT_PATH_SLUG
+  # node 22 + SAM CLI + AWS CLI 가 들어 있는 이미지. 사내 레지스트리 미러가 있으면 그 주소로 바꾼다.
+  SAM_IMAGE: public.ecr.aws/sam/build-nodejs22.x:latest
+  NODE_IMAGE: node:22
+
+stages:
+  - deploy-api
+  - pages
+
+deploy-api:
+  stage: deploy-api
+  image: $SAM_IMAGE
+  tags:
+    - $DEPLOY_RUNNER_TAG
+  # 같은 프로젝트의 배포가 겹치지 않게 한 번에 하나씩
+  resource_group: aws-deploy
+  id_tokens:
+    AWS_OIDC_TOKEN:
+      aud: sts.amazonaws.com
+  script:
+    # CORS 허용 Origin = Pages 도메인 (예: https://pages.example.com)
+    - export ALLOWED_ORIGIN="$(printf '%s' "$CI_PAGES_URL" | sed -E 's#^(https?://[^/]+).*#\1#')"
+    - bash scripts/ci/deploy-api.sh
+  artifacts:
+    reports:
+      dotenv: api.env
+
+pages:
+  stage: pages
+  image: $NODE_IMAGE
+  needs: [deploy-api]
+  script:
+    # Vite base = Pages 경로 (예: /my-project-1a2b3c/)
+    - export VITE_BASE="$(printf '%s' "$CI_PAGES_URL" | sed -E 's#^https?://[^/]+##; s#/*$#/#')"
+    - bash scripts/ci/build-web.sh
+    # GitLab Pages 는 public/ 을 게시한다. 빌드가 끝난 뒤이므로 소스의 public/ 은 덮어써도 된다.
+    - rm -rf public && mv dist public
+  artifacts:
+    paths:
+      - public
