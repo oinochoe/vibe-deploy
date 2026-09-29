@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { apiFetch } from "./lib/api";
 
+// 응답 타입은 api/hello.ts, api/text-stats.ts 의 res.json() 형태와 맞춰야 한다 (공유 타입 없음)
 interface HelloResponse {
   message: string;
   timestamp: string;
@@ -22,12 +23,14 @@ export default function App() {
   const [statsError, setStatsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // 첫 렌더 시 GET /hello 호출 → Lambda 연결 여부를 화면에서 바로 확인할 수 있다
   useEffect(() => {
     apiFetch<HelloResponse>("hello?name=vibe")
       .then(setHello)
       .catch((err: unknown) => setError(String(err)));
   }, []);
 
+  // POST /text-stats. content-type 을 JSON 으로 보내야 서버에서 req.body 가 객체로 파싱된다
   async function analyze(e: FormEvent) {
     e.preventDefault();
     setLoading(true);

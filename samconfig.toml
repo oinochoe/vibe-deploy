@@ -1,14 +1,16 @@
+# sam CLI 기본값. `sam build` / `sam deploy` 를 인자 없이 실행해도 이 값이 적용된다.
+# CI(deploy.yml)는 --stack-name / --region / --parameter-overrides 를 명령줄로 넘겨 여기 값을 덮어쓴다.
 version = 0.1
 
 [default.global.parameters]
 stack_name = "vibe-deploy-api"
 
 [default.build.parameters]
-cached = true
+cached = true   # 변경 없는 함수는 재빌드 생략
 parallel = true
 
 [default.deploy.parameters]
-capabilities = "CAPABILITY_IAM"
-resolve_s3 = true
-confirm_changeset = false
-fail_on_empty_changeset = false
+capabilities = "CAPABILITY_IAM"    # Lambda 실행 Role 을 SAM 이 만들기 때문에 필요
+resolve_s3 = true                  # 배포 아티팩트용 S3 버킷을 SAM 이 자동 생성/재사용 (aws-sam-cli-managed-default)
+confirm_changeset = false          # CI 에서 대화형 확인 없이 진행
+fail_on_empty_changeset = false    # 변경이 없어도 실패로 보지 않음 (프론트만 바뀐 push)
