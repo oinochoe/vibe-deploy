@@ -26,38 +26,37 @@ src/ (프론트)   ┘   (자동 생성)          (_lib/http.ts)└─ _lib/azur
 **Azure 는 아직 실제 배포를 검증하지 않았다.** 어댑터는 Azure 요청 객체로 테스트했고(AWS 와 같은 응답), 번들 빌드까지 CI 에서 검사한다.
 배포 파일(`.gitlab-ci.azure.yml`)의 배포 클라이언트 이미지·실행 방식, 그리고 번들에 `@azure/functions` 를 넣을지(`--external`) 여부는 Azure 공식 문서와 실제 배포로 확인해야 한다.
 
-## GitLab 설정 (최초 1회)
+## 사내 GitLab (Azure 경로) — 단계별 진행
 
-### 1. AWS 배포 러너 (DevOps 표준 러너 사용)
+목표: 비개발자가 AI 에게 "배포해줘" 라고 하면 코드가 GitLab 에 커밋되고, **웹은 GitLab Pages**, **API 는 Azure Functions** 로 자동 배포된다.
+한 번에 다 만들지 않고, 한 단계씩 실제 환경에서 확인하며 진행한다.
 
-API 배포(`deploy-api`)는 **AWS 에 배포할 수 있는 기존 러너**에서 실행한다. 사내 Pages 러너는 외부 접속이 막혀 있어 AWS 에 배포할 수 없다.
-배포 권한은 그 러너에만 있고, 사용자와 Pages 러너는 AWS 자격증명을 갖지 않는다.
+| 단계 | 내용 | 확인 방법 | 상태 |
+| --- | --- | --- | --- |
+| 1 | 웹만 GitLab Pages 에 배포 (`.gitlab-ci.yml`) | 파이프라인 성공, 웹 주소에서 화면이 뜸 | 진행 중 |
+| 2 | Azure 함수 앱 1개를 수동으로 만들고, API 를 배포용 압축 파일로 빌드 | 함수 주소가 `/api/hello` 에 응답 | 예정 |
+| 3 | 배포 서버(Azure DevOps 에이전트)에서 함수 앱에 API 배포 | 릴리스 실행 후 함수가 새 코드로 응답 | 예정 |
+| 4 | GitLab 커밋 → Azure DevOps 릴리스 자동 호출, 웹에 API 주소 주입 | 커밋만으로 웹과 API 가 함께 갱신 | 예정 |
+| 5 | "배포해줘" 도구 (AI 채팅에서 배포) | 채팅에서 배포 후 주소를 돌려받음 | 예정 |
 
-DevOps 팀에 확인할 것:
+파이프라인 파일 정리
 
-| 항목 | 이유 |
+| 파일 | 용도 |
 | --- | --- |
-| 러너 태그, 사용자 프로젝트 그룹에서 쓸 수 있는지 | `DEPLOY_RUNNER_TAG` 에 넣음 |
-| 실행기 종류 (Docker / Kubernetes / 셸) | Docker 계열이면 `SAM_IMAGE` 사용, 셸이면 러너에 `node` 22 · `sam` · `aws` 설치 필요 |
-| AWS 자격증명 방식 (인스턴스 역할 / 역할 전환 / OIDC) | 러너에 이미 있으면 `AWS_ROLE_ARN` 비움 |
-| 그 역할의 권한 범위 | CloudFormation 스택 생성, SAM 아티팩트 S3, Lambda, IAM 역할 생성(`vibe-*`), Logs 가 필요 |
-| 러너에서 npm 레지스트리(Nexus) 접근 | `npm ci` |
-| 기존 Lambda 배포 CI 템플릿 여부 | 있으면 `include:` 로 재사용 검토 |
+| `.gitlab-ci.yml` | 사내 GitLab. 1단계(웹만) 부터 단계별로 job 을 추가한다 |
+| `.gitlab-ci.aws.yml` | 사용하지 않는 AWS 버전 (보관용) |
+| `.gitlab-ci.azure.yml` | Static Web Apps 기준 초안 (검증 전, 보관용) |
+| `scripts/ci/build-web.sh` | 웹 빌드. 러너 환경(Node 유무, 인터넷/사내 레지스트리)에 맞춰 스스로 방법을 고른다 |
 
-권한 정책은 GitHub PoC 정책에서 `vibe-deploy-stack` 을 `vibe-*` 로 넓힌 것과 같다 (스택 이름이 `vibe-<프로젝트 경로>` 로 자동 생성됨).
-여러 사람이 쓰므로 `iam:CreateRole` 에 조건 `"StringEquals": {"iam:PermissionsBoundary": "<권한 경계 ARN>"}` 을 걸어,
-템플릿을 고쳐 관리자 권한 역할을 만드는 것을 막는다.
+### 1단계 실행 방법
 
-### 2. GitLab: CI/CD 변수 (사용자 프로젝트 그룹에 한 번)
-
-| 변수 | 값 | 비고 |
-| --- | --- | --- |
-| `DEPLOY_RUNNER_TAG` | AWS 배포 러너의 태그 | 필수 |
-| `AWS_ROLE_ARN` | OIDC 로 넘겨받을 역할 ARN | 선택. 러너에 자격증명이 이미 있으면 비움 |
-| `PERMISSIONS_BOUNDARY_ARN` | 권한 경계 정책 ARN | 선택 |
-| `SAM_IMAGE`, `NODE_IMAGE` | 사내 레지스트리 미러 주소 | 러너가 인터넷에 못 나갈 때 |
-
-프로젝트의 Pages 경로(`CI_PAGES_URL`)에서 Vite base 경로와 CORS 허용 Origin 을 자동으로 계산하므로 따로 설정할 것은 없다.
+1. GitLab 에 새 프로젝트를 만들고 이 저장소의 코드를 올린다.
+2. 러너에서 패키지를 받을 방법을 정한다 (둘 중 하나).
+   - **사내 npm 레지스트리를 쓸 수 있으면:** 프로젝트 CI/CD 변수 `NPM_REGISTRY` 에 주소를 넣는다. 사내 CA 인증서를 쓰면 `NPM_CAFILE` 에 인증서 파일 경로도 넣는다.
+   - **쓸 수 없으면(임시):** 프로젝트에 `ci-offline/node.tar.xz`(Node 실행 파일 압축본, 러너에 Node 가 없을 때)와
+     `ci-offline/node_modules.tar.gz` 를 올린다. **러너와 같은 Linux x64 에서 만든 것**이어야 한다 (Windows 에서 만들면 빌드가 실패한다).
+     이 폴더는 `.gitignore` 에 들어 있으므로, GitHub 에 올라가지 않도록 GitLab 화면의 파일 업로드로 넣는다.
+3. 파이프라인을 실행하고 웹 주소를 연다. 이 단계에서는 API 가 없으므로 화면의 API 호출 부분이 오류로 보이는 것이 정상이다.
 
 ## GitHub PoC 설정 (최초 1회)
 

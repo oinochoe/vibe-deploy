@@ -8,3 +8,5 @@ dist/
 api/_generated/
 # Azure Functions 빌드 결과 (npm --prefix api run build:azure)
 api/dist/
+# 러너에 Node/인터넷이 없을 때 GitLab 에서만 쓰는 압축본 (크기가 크고 GitHub 에 올리면 안 된다)
+ci-offline/

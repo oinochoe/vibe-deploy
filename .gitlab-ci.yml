@@ -1,63 +1,31 @@
-# GitLab 배포 파이프라인
+# 사내 GitLab 파이프라인 — 1단계: 웹(Vite)만 GitLab Pages 에 배포한다.
 #
 # 기본 브랜치(main)에 커밋이 들어오면 MR 없이 바로 배포한다.
-# 검사(타입체크 · 빌드 · 배포 확인)를 통과하면 반영되고, 실패하면 이전 버전이 그대로 유지된다.
-#   1) deploy-api : api/ → SAM → AWS Lambda, Function URL 을 VITE_API_URL 로 다음 단계에 전달
-#                   → AWS 에 배포할 수 있는 기존(DevOps 표준) 러너에서 실행 (DEPLOY_RUNNER_TAG)
-#   2) pages      : Vite 빌드 → GitLab Pages
-#                   → 태그 없는 Pages 러너에서 실행 (Node 와 Nexus npm 접근 필요)
+# 빌드(타입체크 포함)가 실패하면 배포되지 않고 이전 버전이 그대로 유지된다.
 #
-# 그룹(web) CI/CD 변수
-#   DEPLOY_RUNNER_TAG         AWS 배포 러너의 태그 (필수. 틀리면 job 이 대기 상태로 멈춤)
-#   AWS_ROLE_ARN              (선택) OIDC 로 넘겨받을 IAM Role. 비우면 러너에 이미 있는 AWS 자격증명을 사용
-#   PERMISSIONS_BOUNDARY_ARN  (선택) Lambda 실행 역할에 붙일 권한 경계
-#   AWS_REGION, SAM_IMAGE, NODE_IMAGE  아래 기본값을 덮어쓸 때 (셸 실행기에서는 이미지 설정이 무시됨)
+# 이 단계에서는 API 가 아직 없으므로 화면의 "API 호출" 부분은 오류로 보이는 것이 정상이다.
+# API(Azure Functions) 배포는 다음 단계에서 이 파일에 job 을 추가한다.
+#
+# 러너 환경에 맞춰 build-web.sh 가 알아서 고르는 것들 (모두 선택 변수, scripts/ci/build-web.sh 참고)
+#   NPM_REGISTRY        사내 npm 레지스트리 주소. 있으면 여기서 패키지를 받는다
+#   NPM_CAFILE          사내 CA 인증서 파일 경로 (레지스트리가 사내 CA 를 쓸 때)
+#   ci-offline/         러너에 Node 나 인터넷이 없을 때 쓰는 압축본 (node.tar.xz, node_modules.tar.gz)
 
 workflow:
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_PIPELINE_SOURCE == "web"
 
-variables:
-  DEPLOY_RUNNER_TAG: aws-deploy
-  AWS_REGION: ap-northeast-2
-  STACK_NAME: vibe-$CI_PROJECT_PATH_SLUG
-  # node 22 + SAM CLI + AWS CLI 가 들어 있는 이미지. 사내 레지스트리 미러가 있으면 그 주소로 바꾼다.
-  SAM_IMAGE: public.ecr.aws/sam/build-nodejs22.x:latest
-  NODE_IMAGE: node:22
-
-stages:
-  - deploy-api
-  - pages
-
-deploy-api:
-  stage: deploy-api
-  image: $SAM_IMAGE
-  tags:
-    - $DEPLOY_RUNNER_TAG
-  # 같은 프로젝트의 배포가 겹치지 않게 한 번에 하나씩
-  resource_group: aws-deploy
-  id_tokens:
-    AWS_OIDC_TOKEN:
-      aud: sts.amazonaws.com
-  script:
-    # CORS 허용 Origin = Pages 도메인 (예: https://pages.example.com)
-    - export ALLOWED_ORIGIN="$(printf '%s' "$CI_PAGES_URL" | sed -E 's#^(https?://[^/]+).*#\1#')"
-    - bash scripts/ci/deploy-api.sh
-  artifacts:
-    reports:
-      dotenv: api.env
-
+# GitLab 은 이름이 "pages" 인 job 의 public/ 을 웹으로 게시한다.
 pages:
-  stage: pages
-  image: $NODE_IMAGE
-  needs: [deploy-api]
+  stage: deploy
   script:
-    # Vite base = Pages 경로 (예: /my-project-1a2b3c/)
+    # 웹 주소가 https://<도메인>/<프로젝트경로>/ 형태이므로 경로 부분을 Vite base 로 넘긴다 (에셋 경로가 맞아야 화면이 뜬다)
     - export VITE_BASE="$(printf '%s' "$CI_PAGES_URL" | sed -E 's#^https?://[^/]+##; s#/*$#/#')"
     - bash scripts/ci/build-web.sh
-    # GitLab Pages 는 public/ 을 게시한다. 빌드가 끝난 뒤이므로 소스의 public/ 은 덮어써도 된다.
+    # 빌드가 끝난 뒤이므로 소스의 public/ 이 있어도 덮어써도 된다
     - rm -rf public && mv dist public
   artifacts:
     paths:
       - public
+    expire_in: 1 week

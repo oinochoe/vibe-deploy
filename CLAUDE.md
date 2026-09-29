@@ -20,8 +20,9 @@ template.yml          [AWS] SAM: 단일 Lambda + Function URL
 host.json (api/)      [Azure] Functions 호스트 설정
 staticwebapp.config.json  [Azure] Static Web Apps 설정
 samconfig.toml        sam build/deploy 기본값
-.gitlab-ci.yml               (사내 GitLab, main 커밋) SAM 배포 → VITE_API_URL 주입 → Vite 빌드 → GitLab Pages
-scripts/ci/                  파이프라인이 실행하는 배포 스크립트 (deploy-api.sh, build-web.sh)
+.gitlab-ci.yml               (사내 GitLab, main 커밋) 1단계: 웹만 GitLab Pages. API(Azure Functions)는 단계별로 추가 중
+.gitlab-ci.aws.yml / .gitlab-ci.azure.yml   사용하지 않는 AWS 버전 / 검증 전 Azure 초안 (보관용)
+scripts/ci/                  파이프라인이 실행하는 스크립트 (build-web.sh 사용 중, deploy-api.sh 는 AWS 용 보관)
 .github/workflows/deploy.yml  (GitHub PoC, main push) 위와 같은 흐름 → GitHub Pages
 .github/workflows/ci.yml      (GitHub PoC, PR) 타입체크 + Vite 빌드 + sam validate/build — 배포 없음
 ```
@@ -65,7 +66,7 @@ npm run typecheck # 프론트 + api 타입체크 (커밋 전 필수)
 - 기본 브랜치(main)에 커밋되면 파이프라인이 MR/PR 없이 바로 배포한다. 수동 `sam deploy` 는 하지 않는다.
 - 파이프라인 검사(타입체크 · 빌드 · 배포 확인)에 실패하면 배포되지 않고 이전 버전이 유지된다. 실패 로그를 읽고 코드를 고쳐 다시 커밋한다.
 - `.gitlab-ci.yml`, `scripts/ci/`, `template.yml`, `api/_router.ts`, `api/_lib/` 는 플랫폼 파일이다. 기능 구현 중에 수정하지 않는다.
-- AWS 인증은 OIDC(`AWS_ROLE_ARN`) 또는 러너의 IAM Role. Access Key 를 코드나 변수에 넣지 않는다.
+- 클라우드 자격증명(Azure 등)은 코드나 CI 변수에 직접 넣지 않는다. 배포 서버에 설정된 서비스 연결을 쓴다. (GitHub PoC 는 AWS OIDC)
 
 ## 작성 언어
 
