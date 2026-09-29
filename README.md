@@ -1,13 +1,30 @@
 # vibe-deploy
 
-Vite(React + TS) 프론트엔드 + AWS Lambda(Function URL) 백엔드 모노레포 PoC.
-기본 브랜치에 커밋이 들어오면 **SAM 배포 → Function URL 을 `VITE_API_URL` 로 주입 → Vite 빌드 → Pages 배포** 를 한 파이프라인으로 수행한다.
+Vite(React + TS) 프론트엔드 + 서버리스 백엔드(AWS Lambda 또는 Azure Functions) 모노레포 PoC.
+기본 브랜치에 커밋이 들어오면 **API 배포 → 주소를 `VITE_API_URL` 로 주입 → Vite 빌드 → 웹 배포** 를 한 파이프라인으로 수행한다.
 MR/PR 없이 바로 배포되며, 검사(타입체크 · 빌드 · 배포 확인)를 통과하지 못하면 이전 버전이 유지된다.
 
-| 파이프라인 | 파일 | 웹 호스팅 |
+## 구조: 한 벌의 핸들러, 두 개의 클라우드
+
+사용자가 쓰는 코드(`api/<이름>.ts` 의 `(req, res)` 함수와 `src/`)는 클라우드와 무관하다.
+클라우드마다 다른 부분은 **어댑터와 진입점, 인프라 정의**뿐이다.
+
+```
+api/<이름>.ts ──┐                                  ┌─ _lib/lambda.ts + _router.ts  → AWS Lambda   (template.yml)
+  (핸들러)      ├→ _generated/routes.ts → dispatch() ┤
+src/ (프론트)   ┘   (자동 생성)          (_lib/http.ts)└─ _lib/azure.ts  + _azure.ts   → Azure Functions (host.json, staticwebapp.config.json)
+```
+
+| 구분 | AWS (기본) | Azure (예비) |
 | --- | --- | --- |
-| GitLab (사내, 목표) | `.gitlab-ci.yml` → `scripts/ci/*.sh` | GitLab Pages |
-| GitHub (PoC) | `.github/workflows/deploy.yml` | GitHub Pages |
+| 웹 | GitLab Pages / GitHub Pages | Azure Static Web Apps (API 와 한 번에) |
+| API 주소 | Lambda Function URL (다른 도메인 → CORS 필요, `VITE_API_URL` 주입) | 같은 도메인의 `/api` (CORS·주입 불필요) |
+| 파이프라인 | `.gitlab-ci.yml` + `scripts/ci/*.sh` (GitLab), `.github/workflows/deploy.yml` (GitHub) | `.gitlab-ci.azure.yml` (기본으로 쓰려면 `.gitlab-ci.yml` 로 교체) |
+| 인증 | 러너의 AWS 자격증명 또는 OIDC | 앱별 배포 토큰 |
+| 로컬 검사 | `sam build` | `npm --prefix api run build:azure` |
+
+**Azure 는 아직 실제 배포를 검증하지 않았다.** 어댑터는 Azure 요청 객체로 테스트했고(AWS 와 같은 응답), 번들 빌드까지 CI 에서 검사한다.
+배포 파일(`.gitlab-ci.azure.yml`)의 배포 클라이언트 이미지·실행 방식, 그리고 번들에 `@azure/functions` 를 넣을지(`--external`) 여부는 Azure 공식 문서와 실제 배포로 확인해야 한다.
 
 ## GitLab 설정 (최초 1회)
 
